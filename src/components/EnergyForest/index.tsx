@@ -1,64 +1,68 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence, useAnimation } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import background from '../../assets/background.png';
 
-// --- 配置常量 ---
+// --- 类型定义 ---
+interface Orb {
+  id: string;
+  value: number;
+  color: string;
+  position: { top: number; left: number };
+}
+
+interface Particle {
+  id: string;
+  startRect: DOMRect;
+  endRect: DOMRect;
+  value: number;
+}
+
+interface FloatText {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+}
+
+// --- 配置 ---
 const CONFIG = {
-  orbCount: 8,
+  orbCount: 6, // 初始小球数量
+  orbSpawnThreshold: 5, // 小球数量阈值
+  orbSpawnInterval: 3000, // 生成间隔（毫秒）- 修改为 3 秒
   baseEnergy: 15,
   variance: 10,
-  colors: [
-    '#00ff88', // 绿色
-    '#4facfe', // 蓝色
-    '#f093fb', // 粉色
-    '#fa709a', // 红色
-  ]
+  colors: ['#00ff88', '#4facfe', '#f093fb', '#fa709a'] as const,
+  maxEnergy: 1000,
 };
 
-// --- 子组件：单个能量球 ---
-// 使用 React.memo 优化，防止父组件更新时不必要的重渲染
-const EnergyOrb = React.memo(({ id, value, color, onCollect, position }) => {
-  const controls = useAnimation();
+// --- 子组件：能量球 ---
+const EnergyOrb: React.FC<{
+  id: string;
+  value: number;
+  color: string;
+  position: { top: number; left: number };
+  onCollect: (id: string, value: number, rect: DOMRect) => void;
+}> = React.memo(({ id, value, color, position, onCollect }) => {
   const [isCollected, setIsCollected] = useState(false);
 
-  // 漂浮动画配置
-  const floatVariants = {
-    idle: {
-      y: [0, -15, 0],
-      rotate: [0, 5, -5, 0],
-      transition: {
-        duration: 3,
-        repeat: Infinity,
-        ease: "easeInOut",
-        delay: Math.random() * 2, // 随机延迟，让每个球不同步
-      }
-    },
-    collected: {
-      scale: 0,
-      opacity: 0,
-      transition: { duration: 0.3 }
-    }
-  };
-
-  const handleClick = async (e) => {
-    if (isCollected) return;
-    
-    // 阻止事件冒泡（如果需要）
+  const handleInteract = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
-    
+    e.preventDefault();
+
+    if (isCollected) return;
+
+    console.log(`[Debug] Orb ${id} clicked! Value: ${value}`);
+
     setIsCollected(true);
-    
-    // 获取点击位置和目标位置（用于计算飞行轨迹）
-    // 注意：在 framer-motion 中，更优雅的方式是使用 layoutId 共享元素动画，
-    // 但为了精确控制飞向特定的 Header 元素，我们这里采用手动触发回调 + 视觉反馈
-    
-    // 通知父组件开始收集流程，传递当前元素的 DOM 信息
-    const rect = e.currentTarget.getBoundingClientRect();
+
+    const target = e.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+
     onCollect(id, value, rect);
   };
 
   return (
     <motion.div
-      className="energy-orb"
       style={{
         position: 'absolute',
         top: `${position.top}%`,
@@ -71,259 +75,231 @@ const EnergyOrb = React.memo(({ id, value, color, onCollect, position }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: '12px',
+        fontSize: '14px',
         fontWeight: 'bold',
-        color: 'rgba(0,0,0,0.6)',
+        color: 'rgba(0,0,0,0.7)',
         cursor: 'pointer',
-        willChange: 'transform, opacity', // 性能提示
-        zIndex: 10,
-        touchAction: 'manipulation'
+        zIndex: 50,
+        pointerEvents: 'auto',
+        touchAction: 'manipulation',
+        userSelect: 'none',
+        WebkitTapHighlightColor: 'transparent',
       }}
-      variants={floatVariants}
-      animate={isCollected ? "collected" : "idle"}
-      onClick={handleClick}
-      // 移动端触摸优化
-      whileTap={{ scale: 0.9 }}
+      initial={{ scale: 0, opacity: 0 }}
+      animate={isCollected ? { scale: 0, opacity: 0 } : {
+        y: [0, -10, 0], // 简化动画：幅度减小，周期缩短
+        scale: 1,
+        opacity: 1
+      }}
+      transition={{
+        y: {
+          duration: 2, // 缩短周期
+          repeat: Infinity,
+          ease: "easeInOut",
+          delay: Math.random() * 2 // 随机延迟，错开动画
+        },
+        default: { duration: 0.3 }
+      }}
+      onClick={handleInteract}
+      onTouchStart={handleInteract}
     >
-      {value}
-      {/* 
-         【AI 加分项集成点】
-         如果你有 AI 生成的图片，可以这样替换背景：
-         <img src={`/assets/orb-${id}.png`} style={{width: '100%', height: '100%', objectFit: 'contain'}} alt="orb" />
-      */}
+      {value}g
     </motion.div>
   );
 });
 
-// --- 子组件：飞行的能量粒子 (视觉反馈) ---
-const FlyingParticle = ({ startRect, endRect, value, onComplete }) => {
-  // 计算相对位移
-  const deltaX = endRect.left + endRect.width / 2 - (startRect.left + startRect.width / 2);
-  const deltaY = endRect.top + endRect.height / 2 - (startRect.top + startRect.height / 2);
+// --- 子组件：飞行粒子 ---
+const FlyingParticle: React.FC<{
+  startRect: DOMRect;
+  endRect: DOMRect;
+  value: number;
+  onComplete: () => void;
+}> = ({ startRect, endRect, value, onComplete }) => {
+  const deltaX = (endRect.left + endRect.width / 2) - (startRect.left + startRect.width / 2);
+  const deltaY = (endRect.top + endRect.height / 2) - (startRect.top + startRect.height / 2);
 
   return (
     <motion.div
-      initial={{ 
-        x: 0, 
-        y: 0, 
-        scale: 1, 
-        opacity: 1,
+      initial={{
+        x: 0, y: 0, scale: 1, opacity: 1,
         position: 'fixed',
-        left: startRect.left,
-        top: startRect.top,
-        width: startRect.width,
-        height: startRect.height,
-        zIndex: 100
-      }}
-      animate={{ 
-        x: deltaX, 
-        y: deltaY, 
-        scale: 0.2, 
-        opacity: 0 
-      }}
-      transition={{ 
-        duration: 0.6, 
-        ease: [0.25, 1, 0.5, 1] // 快速飞出，慢速吸入
-      }}
-      onAnimationComplete={onComplete}
-      style={{
-        borderRadius: '50%',
+        left: startRect.left, top: startRect.top,
+        width: startRect.width, height: startRect.height,
+        zIndex: 100,
         background: `radial-gradient(circle at 30% 30%, #fff, #00ff88)`,
-        pointerEvents: 'none', // 忽略点击
-        willChange: 'transform, opacity'
+        borderRadius: '50%',
+        pointerEvents: 'none'
       }}
+      animate={{ x: deltaX, y: deltaY, scale: 0.2, opacity: 0 }}
+      transition={{ duration: 0.6, ease: [0.25, 1, 0.5, 1] }}
+      onAnimationComplete={onComplete}
     />
   );
 };
 
-// --- 子组件：飘字效果 (+15g) ---
-const FloatText = ({ x, y, text }) => {
-  return (
-    <motion.div
-      initial={{ opacity: 1, y: 0, x: '-50%' }}
-      animate={{ opacity: 0, y: -40, x: '-50%' }}
-      transition={{ duration: 0.8, ease: "easeOut" }}
-      onAnimationComplete={() => {}} // 父组件负责清理
-      style={{
-        position: 'fixed',
-        left: x,
-        top: y,
-        fontSize: '20px',
-        fontWeight: 'bold',
-        color: '#2ecc71',
-        textShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        pointerEvents: 'none',
-        zIndex: 101
-      }}
-    >
-      {text}
-    </motion.div>
-  );
-};
-
-// --- 样式对象 (模拟 CSS Modules) ---
-const styles = {
-  container: {
-    position: 'relative',
-    width: '100vw',
-    height: '100vh',
-    overflow: 'hidden',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    backgroundColor: '#87CEEB',
-    touchAction: 'manipulation',
-    userSelect: 'none',
-    WebkitTapHighlightColor: 'transparent',
-  },
-  bg: {
-    position: 'absolute',
-    top: 0, left: 0, width: '100%', height: '100%',
-    background: 'linear-gradient(180deg, #a8edea 0%, #fed6e3 100%)',
-    zIndex: 1,
-  },
-  fg: {
-    position: 'absolute',
-    bottom: 0, left: 0, width: '100%', height: '30%',
-    backgroundImage: 'radial-gradient(circle at 50% 100%, #4caf50 20%, transparent 21%)',
-    backgroundSize: '100% 100%',
-    zIndex: 2,
-    pointerEvents: 'none',
-  },
-  header: {
-    position: 'absolute',
-    top: '20px', left: '20px', right: '20px',
-    zIndex: 20,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    background: 'rgba(255, 255, 255, 0.85)',
-    backdropFilter: 'blur(10px)',
-    padding: '12px 24px',
-    borderRadius: '30px',
-    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-  },
-  label: {
-    fontSize: '14px',
-    color: '#555',
-    fontWeight: 'bold',
-  },
-  energyBox: {
-    // 用于获取坐标的参考点
-  },
-  energyValue: {
-    fontSize: '24px',
-    color: '#2ecc71',
-    fontWeight: '800',
-    transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-    display: 'inline-block',
-  },
-  orbContainer: {
-    position: 'absolute',
-    top: 0, left: 0, width: '100%', height: '100%',
-    zIndex: 10,
-    pointerEvents: 'none', // 让点击穿透到具体的 orb
-  },
-  tips: {
-    position: 'absolute',
-    bottom: '30px',
-    width: '100%',
-    textAlign: 'center',
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: '14px',
-    zIndex: 20,
-    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-  }
-};
+// --- 子组件：飘字 ---
+const FloatText: React.FC<{ x: number; y: number; text: string }> = ({ x, y, text }) => (
+  <motion.div
+    initial={{ opacity: 1, y: 0, x: '-50%' }}
+    animate={{ opacity: 0, y: -50, x: '-50%' }}
+    transition={{ duration: 0.8, ease: "easeOut" }}
+    style={{
+      position: 'fixed',
+      left: x, top: y,
+      fontSize: '20px', fontWeight: 'bold', color: '#2ecc71',
+      textShadow: '0 2px 4px rgba(0,0,0,0.2)',
+      pointerEvents: 'none', zIndex: 101
+    }}
+  >
+    {text}
+  </motion.div>
+);
 
 // --- 主组件 ---
-const EnergyForest = () => {
-  const [totalEnergy, setTotalEnergy] = useState(1250);
-  const [orbs, setOrbs] = useState([]);
-  const [particles, setParticles] = useState([]); // 存储正在飞行的粒子
-  const [floatTexts, setFloatTexts] = useState([]); // 存储飘字
-  const headerRef = React.useRef(null);
+const EnergyForest: React.FC = () => {
+  const [totalEnergy, setTotalEnergy] = useState<number>(0);
+  const [orbs, setOrbs] = useState<Orb[]>([]);
+  const [particles, setParticles] = useState<Particle[]>([]);
+  const [floatTexts, setFloatTexts] = useState<FloatText[]>([]);
+  const headerRef = useRef<HTMLDivElement>(null);
 
-  // 初始化能量球
-  useEffect(() => {
-    const newOrbs = Array.from({ length: CONFIG.orbCount }).map((_, i) => ({
-      id: `orb-${i}-${Date.now()}`,
+  // 生成单个小球的函数
+  const generateRandomOrb = useCallback((): Orb => {
+    const newOrb: Orb = {
+      id: `orb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // 更唯一的ID
       value: Math.floor(CONFIG.baseEnergy + Math.random() * CONFIG.variance),
       color: CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)],
       position: {
-        top: 15 + Math.random() * 55, // 15% - 70%
-        left: 10 + Math.random() * 75, // 10% - 85%
+        top: 20 + Math.random() * 50,
+        left: 10 + Math.random() * 80, // X轴位置仍在此范围
       }
-    }));
-    setOrbs(newOrbs);
+    };
+    console.log(`[Debug] Generated new orb at: ${newOrb.position.left}%`); // 临时日志
+    return newOrb;
   }, []);
 
-  // 处理收集逻辑
-  const handleCollect = useCallback((id, value, startRect) => {
-    if (!headerRef.current) return;
+  // 初始化加载状态
+  useEffect(() => {
+    const savedData = localStorage.getItem('energyForestState');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        // 确保加载的数据符合预期类型，否则使用默认值
+        setTotalEnergy(parsed.totalEnergy ?? 0);
+        setOrbs(parsed.orbs ?? []);
+        console.log("[Debug] Loaded state from localStorage:", parsed);
+      } catch (error) {
+        console.error("Failed to parse localStorage data:", error);
+        // 解析失败时，使用默认初始状态
+        setTotalEnergy(0);
+        const initialOrbs: Orb[] = Array.from({ length: CONFIG.orbCount }).map(() => generateRandomOrb());
+        setOrbs(initialOrbs);
+      }
+    } else {
+      // 如果没有保存的数据，则初始化
+      setTotalEnergy(0);
+      const initialOrbs: Orb[] = Array.from({ length: CONFIG.orbCount }).map(() => generateRandomOrb());
+      setOrbs(initialOrbs);
+      console.log("[Debug] Initialized with default state.");
+    }
+  }, [generateRandomOrb]); // 依赖 generateRandomOrb
+
+  // 保存状态到 localStorage
+  useEffect(() => {
+    const dataToSave = {
+      totalEnergy,
+      orbs,
+    };
+    localStorage.setItem('energyForestState', JSON.stringify(dataToSave));
+    console.log("[Debug] Saved state to localStorage:", dataToSave);
+  }, [totalEnergy, orbs]); // 当 totalEnergy 或 orbs 变化时触发
+
+  // 自动生成小球的定时器
+  useEffect(() => {
+    if (orbs.length >= CONFIG.orbSpawnThreshold) return; // 如果小球数量达标，则不启动定时器
+
+    const intervalId = setInterval(() => {
+      console.log(`[Debug] Spawning new orb. Current count: ${orbs.length}`);
+      setOrbs(prev => {
+        // 检查当前数量，防止在异步过程中超过阈值
+        if (prev.length >= CONFIG.orbSpawnThreshold) return prev;
+        return [...prev, generateRandomOrb()];
+      });
+    }, CONFIG.orbSpawnInterval);
+
+    // 清理定时器
+    return () => clearInterval(intervalId);
+  }, [orbs.length, generateRandomOrb]); // 依赖 orbs.length 和 generateRandomOrb
+
+  const handleCollect = useCallback((id: string, value: number, startRect: DOMRect) => {
+    if (!headerRef.current) {
+      console.error("Header ref not found!");
+      return;
+    }
 
     const endRect = headerRef.current.getBoundingClientRect();
+    console.log("[Debug] Start Collecting:", { id, startRect, endRect });
 
-    // 1. 从列表中移除该球 (逻辑删除)
+    // 1. 逻辑移除
     setOrbs(prev => prev.filter(o => o.id !== id));
 
-    // 2. 添加飞行粒子 (视觉层)
-    const particleId = `particle-${Date.now()}`;
-    setParticles(prev => [...prev, { id: particleId, startRect, endRect, value }]);
+    // 2. 创建飞行粒子
+    const pId = `p-${Date.now()}`;
+    setParticles(prev => [...prev, { id: pId, startRect, endRect, value }]);
 
-    // 3. 添加飘字
-    const textId = `text-${Date.now()}`;
+    // 3. 创建飘字
+    const tId = `t-${Date.now()}`;
     const centerX = startRect.left + startRect.width / 2;
     const centerY = startRect.top + startRect.height / 2;
-    setFloatTexts(prev => [...prev, { id: textId, x: centerX, y: centerY, text: `+${value}g` }]);
+    setFloatTexts(prev => [...prev, { id: tId, x: centerX, y: centerY, text: `+${value}g` }]);
 
   }, []);
 
-  // 粒子动画结束回调
-  const handleParticleComplete = useCallback((particleId, value) => {
-    // 移除粒子
-    setParticles(prev => prev.filter(p => p.id !== particleId));
-    
-    // 更新总分 (带动画效果)
+  const handleParticleComplete = useCallback((pid: string, value: number) => {
+    setParticles(prev => prev.filter(p => p.id !== pid));
+
     setTotalEnergy(prev => {
-      const newVal = prev + value;
-      // 触发数字跳动 (通过关键帧或简单的状态副作用，这里简化处理，实际可加 CSS 类)
-      const displayEl = document.getElementById('energy-display');
-      if (displayEl) {
-        displayEl.style.transform = 'scale(1.4)';
-        setTimeout(() => displayEl.style.transform = 'scale(1)', 200);
+      const next = Math.min(CONFIG.maxEnergy, prev + value);
+      const el = document.getElementById('energy-num');
+      if (el) {
+        el.style.transform = 'scale(1.5)';
+        setTimeout(() => el.style.transform = 'scale(1)', 200);
       }
-      return newVal;
+      return next;
     });
   }, []);
 
-  // 飘字动画结束回调 (简单延时清理，实际应由 onAnimationComplete 触发，这里为了演示简化)
+  // 清理飘字
   useEffect(() => {
     if (floatTexts.length === 0) return;
     const timer = setTimeout(() => {
-      setFloatTexts(prev => prev.slice(1)); // 移除最早的
+      setFloatTexts(prev => prev.slice(1));
     }, 800);
     return () => clearTimeout(timer);
   }, [floatTexts]);
 
+  // 计算进度百分比
+  const progressPercentage = Math.min(100, Math.max(0, (totalEnergy / CONFIG.maxEnergy) * 100));
+
   return (
     <div style={styles.container}>
-      {/* 背景层 */}
-      <div style={styles.bg}>
-        {/* 【AI 加分项】在此处替换为 AI 生成的背景图 */}
-        {/* <img src="/ai-bg.jpg" style={{width: '100%', height: '100%', objectFit: 'cover'}} /> */}
+      <div style={{ ...styles.layer, ...styles.bg, pointerEvents: 'none' }} >
+        <img src={background} style={styles.bgImage}/>
       </div>
-      
-      {/* 前景装饰 */}
-      <div style={styles.fg}></div>
+      <div style={{ ...styles.layer, ...styles.fg, pointerEvents: 'none' }} />
 
-      {/* 头部能量计 */}
-      <div style={styles.header}>
-        <span style={styles.label}>当前能量</span>
-        <div ref={headerRef} style={styles.energyBox}>
-          <span id="energy-display" style={styles.energyValue}>{totalEnergy} g</span>
+      <div style={styles.header} ref={headerRef}>
+        <motion.div
+          style={styles.progressFill}
+          animate={{ width: `${progressPercentage}%` }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        />
+        <div style={styles.headerContent}>
+          <span style={styles.label}>当前能量</span>
+          <span id="energy-num" style={styles.energyValue}>{totalEnergy} / {CONFIG.maxEnergy} g</span>
         </div>
       </div>
 
-      {/* 能量球列表 */}
       <div style={styles.orbContainer}>
         <AnimatePresence>
           {orbs.map(orb => (
@@ -336,25 +312,101 @@ const EnergyForest = () => {
         </AnimatePresence>
       </div>
 
-      {/* 飞行粒子层 (Portal 或直接渲染在顶层) */}
       {particles.map(p => (
         <FlyingParticle
           key={p.id}
-          {...p}
+          startRect={p.startRect}
+          endRect={p.endRect}
+          value={p.value}
           onComplete={() => handleParticleComplete(p.id, p.value)}
         />
       ))}
 
-      {/* 飘字层 */}
       {floatTexts.map(t => (
-        <FloatText key={t.id} {...t} />
+        <FloatText key={t.id} x={t.x} y={t.y} text={t.text} />
       ))}
-
-      <div style={styles.tips}>点击能量球收集绿色能量</div>
     </div>
   );
 };
 
+// --- 样式 ---
+const styles = {
+  container: {
+    position: 'relative', width: '100vw', height: '100vh',
+    overflow: 'hidden', backgroundColor: '#87CEEB',
+    fontFamily: 'sans-serif', touchAction: 'manipulation',
+  },
+  layer: {
+    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+    zIndex: 1,
+  },
+  bg: {
+    background:background,
+    backgroundSize: '100% 100%',
 
+  },
+  bgImage:{
+    width: '100%',
+    height: '100%',
+  },
+  fg: {
+    height: '30%', top: 'auto', bottom: 0,
+    backgroundImage: 'radial-gradient(circle at 50% 100%, #4caf50 20%, transparent 21%)',
+    backgroundSize: '100% 100%',
+  },
+  header: {
+    position: 'absolute', top: '120px', left: '20px', right: '20px',
+    zIndex: 40,
+    height: '60px',
+    borderRadius: '30px',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
+    background: 'rgba(200, 200, 200, 0.3)',
+  },
+  progressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #00c9ff, #92fe9d)',
+    borderRadius: '30px',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    minWidth: '0%',
+    zIndex: 1,
+  },
+  headerContent: {
+    position: 'relative',
+    zIndex: 2,
+    display: 'flex',
+    flexDirection: 'column',
+    paddingLeft: '24px',
+    width: '100%',
+  },
+  label: {
+    fontSize: '14px',
+    color: '#fff',
+    fontWeight: 'bold',
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+  },
+  energyValue: {
+    fontSize: '20px',
+    color: '#fff',
+    fontWeight: '800',
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+    transition: 'transform 0.2s',
+    alignSelf: 'flex-start',
+  },
+  orbContainer: {
+    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+    zIndex: 10,
+  },
+  tips: {
+    position: 'absolute', bottom: '30px', width: '100%', textAlign: 'center',
+    color: 'white', zIndex: 60, pointerEvents: 'none',
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+  }
+};
 
 export default EnergyForest;
