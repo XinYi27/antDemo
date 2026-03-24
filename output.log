@@ -1,0 +1,14 @@
+nohup: ignoring input
+
+> @ start /root/workSpace/antGroup/antEnergyGame
+> npm run dev
+
+
+> dev
+> umi dev
+
+info  - [你知道吗？] @umijs/max 是蚂蚁内网框架 Bigfish 的对外版本。
+info  - Umi v4.6.35
+info  - Preparing...
+info  - MFSU eager strategy enabled
+info  - [MFSU][eager] restored cache
