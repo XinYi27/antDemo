@@ -1,6 +1,5 @@
 import React from 'react';
 import backgroundImg from '../../assets/background.png';
-import { CONFIG } from '.';
 
 // --- 样式 ---
 export const styles: Record<string, React.CSSProperties> = {
@@ -35,7 +34,6 @@ export const styles: Record<string, React.CSSProperties> = {
   },
   // 关键：顶部留白，高度 100px
   titleSpacer: {
-    height: CONFIG.titleHeight,
     flexShrink: 0,
     width: '100%',
     zIndex: 1,

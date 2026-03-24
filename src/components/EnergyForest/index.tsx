@@ -157,7 +157,10 @@ const EnergyForest: React.FC = () => {
       {/* 2. 内容流 (Flex Column) */}
 
       {/* 顶部留白区域 (露出背景标题) */}
-      <div style={styles.titleSpacer} />
+      <div style={{
+        height: CONFIG.titleHeight,
+        ...styles.titleSpacer,
+      }} />
 
       {/* 进度条区域 (在留白下方) */}
       <div style={styles.header} ref={headerRef}>
