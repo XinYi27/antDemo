@@ -36,7 +36,13 @@ export const styles: Record<string, React.CSSProperties> = {
   titleSpacer: {
     flexShrink: 0,
     width: '100%',
+    fontSize: '2rem',
+    color: '#fff',
     zIndex: 1,
+    padding: '16px', 
+    fontWeight: '600',
+    textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+    letterSpacing: '0.5px',
   },
   header: {
     height: '60px', // 进度条本身的高度

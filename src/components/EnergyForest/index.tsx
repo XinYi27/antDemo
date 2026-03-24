@@ -51,52 +51,49 @@ const EnergyForest: React.FC = () => {
   const headerRef = useRef<HTMLDivElement>(null);
 
   // 生成单个小球的函数（带碰撞检测）
-  const generateRandomOrb = useCallback((): Orb => {
+  const generateRandomOrb = useCallback((currentOrbs: Orb[] = []): Orb => {
     const containerWidth = window.innerWidth;
     const containerHeight = window.innerHeight;
     const orbDiameter = CONFIG.orbSize;
     const minDist = CONFIG.minDistance;
-    
+
     let newPosition: { top: number; left: number };
     let attempts = 0;
     const maxAttempts = 50; // 最大尝试次数
-    
-    // 获取当前所有 orbs 的位置用于碰撞检测
-    const currentOrbs = orbs;
-    
+
     do {
       // 生成随机位置（考虑边界和球体大小）
       const maxLeft = 100 - (orbDiameter / containerWidth) * 100;
       const maxTop = 100 - (orbDiameter / containerHeight) * 100;
-      
+
       newPosition = {
         top: 20 + Math.random() * 50,
         left: 10 + Math.random() * 80,
       };
-      
+
       attempts++;
-      
+
       // 检查是否与现有球体重叠
       let hasCollision = false;
       for (const orb of currentOrbs) {
         const dx = newPosition.left - orb.position.left;
         const dy = newPosition.top - orb.position.top;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
         // 将像素距离转换为百分比距离进行比较
         const minDistancePercent = (minDist / containerWidth) * 100;
-        
+
         if (distance < minDistancePercent) {
           hasCollision = true;
           break;
         }
       }
-      
+
       if (!hasCollision) {
         break;
       }
     } while (attempts < maxAttempts);
-    
+
     const newOrb: Orb = {
       id: `orb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // 更唯一的 ID
       value: Math.floor(CONFIG.baseEnergy + Math.random() * CONFIG.variance),
@@ -105,7 +102,7 @@ const EnergyForest: React.FC = () => {
     };
     console.log(`[Debug] Generated new orb at: ${newOrb.position.left}%, attempts: ${attempts}`); // 临时日志
     return newOrb;
-  }, [orbs]);
+  }, []);
 
   // 初始化
   useEffect(() => {
@@ -122,16 +119,17 @@ const EnergyForest: React.FC = () => {
     } else {
       initDefault();
     }
-  }, [generateRandomOrb]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const initDefault = () => {
     setTotalEnergy(0);
-    setOrbs(Array.from({ length: CONFIG.orbCount }).map(() => generateRandomOrb()));
+    setOrbs(Array.from({ length: CONFIG.orbCount }).map(() => generateRandomOrb([])));
   };
 
-  // 防抖保存
-  const debouncedTotalEnergy = useDebounce(totalEnergy, CONFIG.debounceDelay);
-  const debouncedOrbs = useDebounce(orbs, CONFIG.debounceDelay);
+  // 防抖保存 (使用固定延迟，避免引用未定义的 CONFIG.debounceDelay)
+  const debouncedTotalEnergy = useDebounce(totalEnergy, 500);
+  const debouncedOrbs = useDebounce(orbs, 500);
 
   useEffect(() => {
     localStorage.setItem('energyForestState', JSON.stringify({
@@ -146,11 +144,11 @@ const EnergyForest: React.FC = () => {
     const intervalId = setInterval(() => {
       setOrbs(prev => {
         if (prev.length >= CONFIG.orbSpawnThreshold) return prev;
-        return [...prev, generateRandomOrb()];
+        return [...prev, generateRandomOrb(prev)];
       });
     }, CONFIG.orbSpawnInterval);
     return () => clearInterval(intervalId);
-  }, [orbs.length, generateRandomOrb]);
+  }, [orbs.length]);
 
   const handleCollect = useCallback((id: string, value: number, startRect: DOMRect) => {
     if (!headerRef.current) return;
@@ -201,11 +199,8 @@ const EnergyForest: React.FC = () => {
 
       {/* 2. 内容流 (Flex Column) */}
 
-      {/* 顶部留白区域 (露出背景标题) */}
-      <div style={{
-        height: CONFIG.titleHeight,
-        ...styles.titleSpacer,
-      }} />
+      {/* 标题 */}
+      <div style={styles.titleSpacer} >蚂蚁森林</div>
 
       {/* 进度条区域 (在留白下方) */}
       <div style={styles.header} ref={headerRef}>
