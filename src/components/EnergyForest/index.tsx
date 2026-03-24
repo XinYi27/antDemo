@@ -30,16 +30,16 @@ interface FloatText {
 }
 
 // --- 配置 ---
-export const CONFIG = {
-  orbCount: 6,
-  orbSpawnThreshold: 5,
-  orbSpawnInterval: 3000,
+const CONFIG = {
+  orbCount: 6, // 初始小球数量
+  orbSpawnThreshold: 5, // 小球数量阈值
+  orbSpawnInterval: 3000, // 生成间隔（毫秒）- 修改为 3 秒
   baseEnergy: 15,
   variance: 10,
   colors: ['#00ff88', '#4facfe', '#f093fb', '#fa709a'] as const,
   maxEnergy: 1000,
-  debounceDelay: 1000,
-  titleHeight: '100px', // 顶部预留高度
+  orbSize: 60, // 能量球直径（像素）
+  minDistance: 85, // 最小间距（防止重叠，考虑球体大小）
 };
 
 // --- 主组件 ---
@@ -50,17 +50,62 @@ const EnergyForest: React.FC = () => {
   const [floatTexts, setFloatTexts] = useState<FloatText[]>([]);
   const headerRef = useRef<HTMLDivElement>(null);
 
+  // 生成单个小球的函数（带碰撞检测）
   const generateRandomOrb = useCallback((): Orb => {
-    return {
-      id: `orb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight;
+    const orbDiameter = CONFIG.orbSize;
+    const minDist = CONFIG.minDistance;
+    
+    let newPosition: { top: number; left: number };
+    let attempts = 0;
+    const maxAttempts = 50; // 最大尝试次数
+    
+    // 获取当前所有 orbs 的位置用于碰撞检测
+    const currentOrbs = orbs;
+    
+    do {
+      // 生成随机位置（考虑边界和球体大小）
+      const maxLeft = 100 - (orbDiameter / containerWidth) * 100;
+      const maxTop = 100 - (orbDiameter / containerHeight) * 100;
+      
+      newPosition = {
+        top: 20 + Math.random() * 50,
+        left: 10 + Math.random() * 80,
+      };
+      
+      attempts++;
+      
+      // 检查是否与现有球体重叠
+      let hasCollision = false;
+      for (const orb of currentOrbs) {
+        const dx = newPosition.left - orb.position.left;
+        const dy = newPosition.top - orb.position.top;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // 将像素距离转换为百分比距离进行比较
+        const minDistancePercent = (minDist / containerWidth) * 100;
+        
+        if (distance < minDistancePercent) {
+          hasCollision = true;
+          break;
+        }
+      }
+      
+      if (!hasCollision) {
+        break;
+      }
+    } while (attempts < maxAttempts);
+    
+    const newOrb: Orb = {
+      id: `orb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // 更唯一的 ID
       value: Math.floor(CONFIG.baseEnergy + Math.random() * CONFIG.variance),
       color: CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)],
-      position: {
-        top: 15 + Math.random() * 60, // 调整生成范围，避免太靠上被标题挡住或太靠下
-        left: 10 + Math.random() * 80,
-      }
+      position: newPosition,
     };
-  }, []);
+    console.log(`[Debug] Generated new orb at: ${newOrb.position.left}%, attempts: ${attempts}`); // 临时日志
+    return newOrb;
+  }, [orbs]);
 
   // 初始化
   useEffect(() => {
@@ -185,9 +230,6 @@ const EnergyForest: React.FC = () => {
           ))}
         </AnimatePresence>
       </div>
-
-      {/* 底部提示 */}
-      <div style={styles.tips}>点击能量球 (当前 {orbs.length} 个)</div>
 
       {/* 粒子和飘字 (Portal 或 Fixed 定位) */}
       {particles.map(p => (
